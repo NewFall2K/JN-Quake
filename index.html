@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Neon JMA Viewer</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <style>
+        body {
+            background-color: #050505;
+            color: #e0e0e0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            display: flex;
+            flex-direction: column; /* Changed to column to stack main area and taskbar */
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* WRAPPER FOR MAP & SIDEBAR */
+        #main-wrapper {
+            display: flex;
+            flex-direction: row;
+            flex-grow: 1;
+            width: 100%;
+            overflow: hidden; /* Keeps map and sidebar strictly constrained */
+        }
+
+        /* MAP AREA */
+        #map-area {
+            flex-grow: 1; 
+            height: 100%;
+            position: relative;
+            z-index: 1;
+            box-shadow: inset -10px 0 20px rgba(0,0,0,0.8);
+            transition: width 0.3s ease;
+        }
+
+        /* THE TOGGLE BUTTON */
+        #toggle-btn {
+            position: absolute;
+            right: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 9999;
+            background-color: #111;
+            color: #0ff;
+            border: 1px solid #333;
+            border-right: none;
+            padding: 15px 5px;
+            cursor: pointer;
+            border-radius: 5px 0 0 5px;
+            box-shadow: -2px 0 5px rgba(0,255,255,0.2);
+            transition: 0.2s;
+        }
+        #toggle-btn:hover {
+            background-color: #222;
+            color: #fff;
+        }
+
+        /* SIDEBAR */
+        #ui-area {
+            width: 30%;
+            min-width: 350px;
+            height: 100%;
+            background-color: #0a0a0a;
+            border-left: 2px solid #222;
+            display: flex;
+            flex-direction: column;
+            z-index: 2;
+            transition: all 0.3s ease;
+        }
+
+        #ui-area.collapsed {
+            width: 0;
+            min-width: 0;
+            border-left: none;
+            overflow: hidden;
+        }
+
+        /* SLOW HUE CYCLE ANIMATION */
+        @keyframes hueCycle {
+            0% { filter: hue-rotate(0deg); }
+            100% { filter: hue-rotate(360deg); }
+        }
+
+        .header {
+            padding: 20px;
+            background: linear-gradient(180deg, #111 0%, #0a0a0a 100%);
+            border-bottom: 1px solid #333;
+            text-align: center;
+            min-width: 350px;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 22px;
+            letter-spacing: 1px;
+            color: #fff;
+            text-shadow: 0 0 5px #0ff, 0 0 10px #0ff, 0 0 20px #0ff;
+            animation: hueCycle 8s linear infinite; 
+        }
+
+        /* Scrollbar */
+        #history-list {
+            flex-grow: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 10px;
+            min-width: 330px;
+        }
+        #history-list::-webkit-scrollbar { width: 8px; }
+        #history-list::-webkit-scrollbar-track { background: #111; }
+        #history-list::-webkit-scrollbar-thumb { background: #0ff; border-radius: 4px; }
+
+        /* STANDARD CARD */
+        .eq-card {
+            display: flex;
+            background-color: #141414;
+            margin-bottom: 10px;
+            border-radius: 6px;
+            overflow: hidden;
+            border: 1px solid #333;
+            transition: 0.2s;
+        }
+        .eq-card:hover { border-color: #555; transform: scale(1.02); cursor: pointer; }
+
+        .shindo-box {
+            width: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            font-weight: bold;
+            color: #fff;
+        }
+
+        .info-box {
+            padding: 10px 15px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            width: 100%;
+        }
+
+        .info-location { font-size: 16px; font-weight: bold; color: #fff; margin-bottom: 5px; }
+        .info-details { font-size: 13px; color: #aaa; display: flex; justify-content: space-between; }
+        .info-details span { color: #0ff; text-shadow: 0 0 3px #0ff; }
+        .info-time { font-size: 11px; color: #777; margin-top: 5px; }
+
+        /* LATEST CARD */
+        .eq-card.latest {
+            margin-bottom: 20px;
+            border: 1px solid #0ff; 
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.15);
+            background-color: #1a1a1a;
+        }
+        .eq-card.latest .shindo-box { width: 80px; font-size: 42px; }
+        .eq-card.latest .info-location { font-size: 20px; margin-bottom: 8px; color: #0ff; }
+        .eq-card.latest .info-details { font-size: 15px; }
+        .eq-card.latest .info-time { font-size: 13px; }
+
+        /* --- NEW: TASKBAR STYLES --- */
+        #taskbar {
+            height: 28px;
+            min-height: 28px;
+            background-color: #080808;
+            border-top: 1px solid #222;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 15px;
+            font-family: monospace;
+            font-size: 13px;
+            color: #888;
+            z-index: 10;
+        }
+        .taskbar-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        #status-dot {
+            font-size: 16px;
+            color: #ffeb3b; /* Default loading yellow */
+        }
+        #status-dot.connected {
+            color: #4caf50;
+            text-shadow: 0 0 6px #4caf50;
+        }
+        #status-dot.error {
+            color: #f44336;
+            text-shadow: 0 0 6px #f44336;
+        }
+        .taskbar-version {
+            color: #0ff;
+            font-weight: bold;
+            text-shadow: 0 0 5px rgba(0, 255, 255, 0.4);
+            letter-spacing: 1px;
+        }
+
+    </style>
+</head>
+<body>
+
+    <!-- Wrapped Map and UI in a main container -->
+    <div id="main-wrapper">
+        <div id="map-area">
+            <div id="toggle-btn">▶</div>
+        </div>
+
+        <div id="ui-area">
+            <div class="header">
+                <h1>Earthquake History</h1>
+            </div>
+            <div id="history-list"></div>
+        </div>
+    </div>
+
+    <!-- NEW TASKBAR -->
+    <div id="taskbar">
+        <div class="taskbar-info">
+            <span id="status-dot">●</span>
+            <span id="status-text">Initializing...</span>
+        </div>
+        <div class="taskbar-version">
+            J&N-Quake-Viewer v0.0.1-alpha
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
